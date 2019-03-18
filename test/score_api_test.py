@@ -170,34 +170,79 @@ def _recover_key(msg_hash: bytes, signature: bytes, compressed: bool) -> Optiona
     return None
 
 
-def main():
-    repeat: int = 1_000000
+def evaluate_sha3_256(repeat: int, count: int):
+    timer = Timer()
     public_key: bytes = bytes.fromhex("041e110fa67887498246b20fe42374880bccee4962ef849508f3d68fe66034d15cfb347af4609eda3b84afc652c108be7650e595e458b1f916eecad7d27a8b35a0")
+    unit_data: bytes = public_key[:64]
+
+    for i in range(0, 11):
+        data = unit_data * i
+        print(f'length: {len(data)}')
+
+        for _ in range(count):
+            timer.start()
+            for _ in range(repeat):
+                sha3_256(data)
+            timer.stop()
+            print(timer)
+        print('-' * 40)
+
+
+def evaluate_recover_key(repeat: int, count: int):
+    timer = Timer()
     msg_hash: bytes = bytes.fromhex('1257b9ea76e716b145463f0350f534f973399898a18a50d391e7d2815e72c950')
     signature: bytes = bytes.fromhex('5a245303fb54346541c9cf1fb19efe53d0520d7e01701bafd8ea40b8e2cb6f352209ca2f2cf0ee144f8f05a4fca2f9b3e7083e063afbae62a2bbb465f2fd035101')
 
-    data = public_key[:64]
-    data = data * 8
-    print(len(data))
-
-    for _ in range(3):
-        start = time.monotonic()
+    for _ in range(count):
+        timer.start()
         for _ in range(repeat):
-            sha3_256(data)
-        print(f'{time.monotonic() - start: .3f}')
-    print('-' * 40)
+            recover_key(msg_hash, signature, False)
+        timer.stop()
+        print(timer)
 
-    """
-    start = time.monotonic()
-    for _ in range(repeat):
-        recover_key(msg_hash, signature, False)
-    print(f'{time.monotonic() - start: .3f}')
 
-    start = time.monotonic()
-    for _ in range(repeat):
-        create_address_with_key(public_key)
-    print(f'{time.monotonic() - start: .3f}')
-    """
+def evaluate_create_address_with_key(repeat: int, count: int):
+    timer = Timer()
+    public_key: bytes = bytes.fromhex("041e110fa67887498246b20fe42374880bccee4962ef849508f3d68fe66034d15cfb347af4609eda3b84afc652c108be7650e595e458b1f916eecad7d27a8b35a0")
+
+    for _ in range(count):
+        timer.start()
+        for _ in range(repeat):
+            create_address_with_key(public_key)
+        timer.stop()
+        print(timer)
+
+
+class Timer(object):
+    def __init__(self):
+        super().__init__()
+        self.start_time: float = 0.0
+        self.stop_time: float = 0.0
+        self.duration: float = 0.0
+
+    def start(self) -> float:
+        self.start_time = time.monotonic()
+        return self.start_time
+
+    def stop(self) -> float:
+        self.stop_time = time.monotonic()
+        self.duration: float = self.stop_time - self.start_time
+
+        return self.stop_time
+
+    def __str__(self) -> str:
+        return f'{self.duration: 0.6f}'
+
+
+def main():
+    repeat: int = 1_000_000
+    count: int = 4
+
+    evaluate_sha3_256(repeat, count)
+    print('=' * 40)
+    evaluate_recover_key(repeat, count)
+    print('=' * 40)
+    evaluate_create_address_with_key(repeat, count)
 
 
 if __name__ == '__main__':

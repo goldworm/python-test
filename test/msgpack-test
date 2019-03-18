@@ -1,0 +1,12 @@
+# -*- coding: utf-8 -*-
+
+import msgpack
+
+
+def main():
+    data = [1, 2 ,3]
+    msgpack.packb(data, use_bin_type=True)
+
+
+if __name__ == '__main__':
+    main()
