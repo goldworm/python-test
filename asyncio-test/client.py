@@ -25,7 +25,10 @@ async def on_recv(reader, writer, name, loop):
     loop.stop()
 
 
-async def on_channel(name: str, loop):
+
+
+
+async def on_connect(name: str, loop):
     path = "/tmp/iiss.sock"
     reader, writer = await asyncio.open_unix_connection(path, loop=loop)
 
@@ -41,7 +44,7 @@ def main():
     loop = asyncio.get_event_loop()
 
     try:
-        loop.create_task(on_channel(name, loop))
+        loop.create_task(on_connect(name, loop))
         loop.run_forever()
     except KeyboardInterrupt:
         pass

@@ -19,7 +19,7 @@ import json
 import time
 from typing import Optional, Any
 
-from secp256k1 import PublicKey, ALL_FLAGS, FLAG_VERIFY
+from secp256k1 import PublicKey, ALL_FLAGS, NO_FLAGS
 
 """
 The explanation below are extracted
@@ -126,7 +126,7 @@ def _convert_key(public_key: bytes) -> Optional[bytes]:
     else:
         return None
 
-    public_key = PublicKey(public_key, raw=True, flags=FLAG_VERIFY)
+    public_key = PublicKey(public_key, raw=True, flags=NO_FLAGS, ctx=_public_key.ctx)
     return public_key.serialize(compressed=not compressed)
 
 
@@ -170,22 +170,43 @@ def _recover_key(msg_hash: bytes, signature: bytes, compressed: bool) -> Optiona
     return None
 
 
-def evaluate_sha3_256(repeat: int, count: int):
-    timer = Timer()
+class Timer(object):
+    def __init__(self):
+        super().__init__()
+        self.start_time: float = 0.0
+        self.stop_time: float = 0.0
+        self.duration: float = 0.0
+
+    def start(self) -> float:
+        self.start_time = time.monotonic()
+        return self.start_time
+
+    def stop(self) -> float:
+        self.stop_time = time.monotonic()
+        self.duration: float = self.stop_time - self.start_time
+
+        return self.stop_time
+
+    def __str__(self) -> str:
+        return f'{self.duration: 0.6f}'
+
+
+def evaluate_sha3_256(timer: Timer, data_size: int, repeat: int, count: int) -> float:
     public_key: bytes = bytes.fromhex("041e110fa67887498246b20fe42374880bccee4962ef849508f3d68fe66034d15cfb347af4609eda3b84afc652c108be7650e595e458b1f916eecad7d27a8b35a0")
-    unit_data: bytes = public_key[:64]
+    data: bytes = public_key[:data_size]
+    elapsed_time = 0.0
 
-    for i in range(0, 11):
-        data = unit_data * i
-        print(f'length: {len(data)}')
+    for _ in range(count):
+        timer.start()
+        for _ in range(repeat):
+            sha3_256(data)
+        timer.stop()
 
-        for _ in range(count):
-            timer.start()
-            for _ in range(repeat):
-                sha3_256(data)
-            timer.stop()
-            print(timer)
-        print('-' * 40)
+        elapsed_time += timer.duration
+
+    average_time = elapsed_time / count
+    print(f'average: {average_time}')
+    return average_time
 
 
 def evaluate_recover_key(repeat: int, count: int):
@@ -213,36 +234,69 @@ def evaluate_create_address_with_key(repeat: int, count: int):
         print(timer)
 
 
-class Timer(object):
-    def __init__(self):
-        super().__init__()
-        self.start_time: float = 0.0
-        self.stop_time: float = 0.0
-        self.duration: float = 0.0
+def evaluate_json_dumps(timer: Timer, obj: dict, repeat: int, count: int):
+    elapsed_time: float = 0.0
 
-    def start(self) -> float:
-        self.start_time = time.monotonic()
-        return self.start_time
+    for _ in range(count):
+        timer.start()
+        for _ in range(repeat):
+            json_dumps(obj)
+        timer.stop()
 
-    def stop(self) -> float:
-        self.stop_time = time.monotonic()
-        self.duration: float = self.stop_time - self.start_time
+        elapsed_time += timer.duration
 
-        return self.stop_time
+    average_time = elapsed_time / count
+    print(f'average: {average_time}')
+    return average_time
 
-    def __str__(self) -> str:
-        return f'{self.duration: 0.6f}'
+
+def evaluate_json_loads(timer: Timer, obj: dict, repeat: int, count: int):
+    text: str = json_dumps(obj)
+    elapsed_time: float = 0.0
+
+    for _ in range(count):
+        timer.start()
+        for _ in range(repeat):
+            obj = json_loads(text)
+        timer.stop()
+
+        elapsed_time += timer.duration
+
+    average_time = elapsed_time / count
+    print(f'average: {average_time}')
+    return average_time
+
+
+def create_json_object(value_size: int, count: int) -> dict:
+    obj = {}
+    for i in range(count):
+        obj[f'key{i}'] = '0' * value_size
+
+    print(obj)
+    return obj
 
 
 def main():
-    repeat: int = 1_000_000
-    count: int = 4
+    timer = Timer()
+    repeat: int = 10000
+    count: int = 50
 
-    evaluate_sha3_256(repeat, count)
+    # evaluate_sha3_256(repeat, count)
     print('=' * 40)
-    evaluate_recover_key(repeat, count)
-    print('=' * 40)
-    evaluate_create_address_with_key(repeat, count)
+    # evaluate_recover_key(repeat, count)
+    # print('=' * 40)
+    # evaluate_create_address_with_key(repeat, count)
+
+    # evaluate_sha3_256(repeat, count)
+
+    obj: dict = create_json_object(value_size=20, count=1)
+
+    sha3_time = evaluate_sha3_256(timer, 32, repeat, count)
+    json_dumps_time = evaluate_json_dumps(timer, obj, repeat, count)
+    json_loads_time = evaluate_json_loads(timer, obj, repeat, count)
+
+    print(f'json_dumps: {json_dumps_time / sha3_time}')
+    print(f'json_loads: {json_loads_time / sha3_time}')
 
 
 if __name__ == '__main__':
