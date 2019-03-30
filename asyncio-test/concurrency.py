@@ -1,19 +1,23 @@
 import asyncio
 import threading
 import time
-
-[]
+from concurrent.futures import ThreadPoolExecutor
 
 
 def callback(loop):
     print(f'callback(): thread-{threading.get_ident()}')
 
 
-def query(loop):
-    print(f'query(): thread-{threading.get_ident()}')
+def query(loop, ret):
+    print(f'query() start: thread-{threading.get_ident()}')
     loop.call_soon_threadsafe(callback, loop)
-    future = asyncio.run_coroutine_threadsafe(coro_func(), loop)
-    return future.result() * 10
+
+    future = asyncio.run_coroutine_threadsafe(coro_func(ret), loop)
+    ret = future.result() * 10
+
+    print(f'query() end: thread-{threading.get_ident()}')
+
+    return ret
 
 
 def invoke():
@@ -24,21 +28,24 @@ def invoke():
     return 0
 
 
-async def coro_func():
+async def coro_func(ret):
     print(f'coro_func(): thread-{threading.get_ident()}')
-    return await asyncio.sleep(3, result=42)
+    return await asyncio.sleep(5, result=ret)
 
 
 async def main():
     print(f'main(): thread-{threading.get_ident()}')
     loop = asyncio.get_running_loop()
 
-    future_query = loop.run_in_executor(None, query, loop)
+    pool = ThreadPoolExecutor(2)
+    future_query1 = loop.run_in_executor(pool, query, loop, 1)
+    future_query2 = loop.run_in_executor(pool, query, loop, 2)
     future_invoke = loop.run_in_executor(None, invoke)
 
-    await asyncio.gather(future_query, future_invoke)
+    await asyncio.gather(future_query1, future_query2, future_invoke)
 
-    print(future_query.result())
+    print(future_query1.result())
+    print(future_query2.result())
 
 
 if __name__ == '__main__':
