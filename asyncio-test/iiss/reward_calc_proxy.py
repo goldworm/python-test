@@ -19,10 +19,9 @@ from enum import IntEnum
 from threading import Lock
 from typing import TYPE_CHECKING
 
-import msgpack
-
 from .server import IPCServer
-
+from .utils.msgpack_for_ipc import MsgPackForIpc
+from .base.address import Address, AddressPrefix
 
 if TYPE_CHECKING:
     from .address import Address
@@ -57,7 +56,7 @@ class RewardCalcProxy(object):
         self._msgs_to_recv = {}
         self._msg_id = 0
 
-        self._server_task = self._ipc_server.open(self._loop, self._on_accepted, path)
+        self._ipc_server.open(self._loop, self._on_accepted, path)
 
     def get_msg_id(self):
         msg_id = self._msg_id
@@ -66,8 +65,12 @@ class RewardCalcProxy(object):
         return msg_id
 
     def _on_accepted(self, reader: 'StreamReader', writer: 'StreamWriter'):
+        print(f"on_accepted() start: {reader} {writer}")
+
         asyncio.ensure_future(self.on_send(writer))
         asyncio.ensure_future(self.on_recv(reader))
+
+        print("on_accepted() end")
 
     async def on_send(self, writer: 'StreamWriter'):
         while True:
@@ -88,7 +91,7 @@ class RewardCalcProxy(object):
     async def on_recv(self, reader: 'StreamReader'):
         while True:
             data: bytes = await reader.read(1024)
-            print(f"on_recv(): data({data.hex()}")
+            print(f"on_recv(): data({data.hex()})")
 
             payload: list = self._loads(data)
 
@@ -100,17 +103,24 @@ class RewardCalcProxy(object):
 
                 del self._msgs_to_recv[msg_id]
 
-    def _dumps(self, payload: list) -> bytes:
-        pass
+    @staticmethod
+    def _dumps(payload: list) -> bytes:
+        return MsgPackForIpc.dumps(payload)
 
-    def _loads(self, data: bytes) -> list:
-        return []
+    @staticmethod
+    def _loads(data: bytes) -> list:
+        return MsgPackForIpc.loads(data)
 
     def start(self):
-        asyncio.ensure_future(self._server_task)
+        self._ipc_server.start()
+
+    def stop(self):
+        self._ipc_server.stop()
 
     def close(self):
-        self._ipc_server = None
+        future = self._ipc_server.close()
+        asyncio.wait_for(future, 5)
+
         self._lock = None
         self._loop = None
 
@@ -142,7 +152,10 @@ class RewardCalcProxy(object):
         """
         future: concurrent.futures.Future = \
             asyncio.run_coroutine_threadsafe(self._query(address), self._loop)
-        return future.result()
+        ret = future.result()
+        ret[2] = Address.from_bytes_including_prefix(ret[2])
+
+        return ret
 
     async def _query(self, address: 'Address') -> list:
         """
@@ -152,7 +165,7 @@ class RewardCalcProxy(object):
         """
         future: asyncio.Future = self._loop.create_future()
         msg_id = self.get_msg_id()
-        item = [[MessageType.QUERY, msg_id, str(address)], future]
+        item = [[MessageType.QUERY, msg_id, address.to_bytes_including_prefix()], future]
 
         self._queue.put_nowait(item)
 
@@ -165,4 +178,3 @@ class RewardCalcProxy(object):
 
     def rollback_block(self, block_height: int, block_hash: bytes) -> list:
         pass
-

@@ -1,8 +1,24 @@
 # -*- coding: utf-8 -*-
 
 import asyncio
+import threading
+import time
+import sys
 
-from .reward_calc_proxy import RewardCalcProxy
+from iiss.reward_calc_proxy import RewardCalcProxy
+from iiss.base.address import AddressPrefix, Address
+
+
+def run(proxy: 'RewardCalcProxy', delay_s: int):
+    print(f"thread start {delay_s}")
+
+    time.sleep(delay_s)
+
+    address = Address.from_data(AddressPrefix.EOA, b'')
+    ret = proxy.query_threadsafe(address)
+    print(f"ret: {ret}")
+
+    print("thread end")
 
 
 def main():
@@ -17,8 +33,17 @@ def main():
         proxy.start()
         print("func() end")
 
+    delay_s: int = int(sys.argv[1])
+    thread = threading.Thread(target=run, args=(proxy, delay_s))
+    thread.start()
+
+    delay_s: int = int(sys.argv[1])
+    thread = threading.Thread(target=run, args=(proxy, delay_s))
+    thread.start()
+
     try:
         loop.call_soon(func)
+
         loop.run_forever()
         proxy.close()
     finally:

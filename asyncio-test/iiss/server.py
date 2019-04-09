@@ -19,8 +19,7 @@ import asyncio
 class IPCServer(object):
     def __init__(self):
         self._loop = None
-        self.server_task = None
-        self._server_coroutine = None
+        self._server = None
 
     def open(self, loop, on_accepted, path: str):
         assert loop
@@ -29,21 +28,22 @@ class IPCServer(object):
 
         self._loop = loop
 
-        coroutine = asyncio.start_unix_server(on_accepted, path)
-        print(f"server_coroutine: {coroutine}")
+        server = asyncio.start_unix_server(on_accepted, path)
+        print(f"server_object: {server}")
 
-        return coroutine
+        self._server = server
 
     def start(self):
-        pass
+        if self._server is not None:
+            asyncio.ensure_future(self._server)
 
     def stop(self):
-        pass
+        if self._server is not None:
+            self._server.close()
 
-    def close(self):
-        if self.server_task:
-            self.server_task.cancel()
-            self.server_task = None
-            self._server_coroutine = None
+    async def close(self):
+        if self._server is not None:
+            await self._server.wait_closed()
+            self._server = None
 
         self._loop = None
