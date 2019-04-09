@@ -15,8 +15,11 @@ def run(proxy: 'RewardCalcProxy', delay_s: int):
     time.sleep(delay_s)
 
     address = Address.from_data(AddressPrefix.EOA, b'')
-    ret = proxy.query_threadsafe(address)
+    ret: list = proxy.query_iscore(address)
     print(f"ret: {ret}")
+
+    address = Address.from_bytes_including_prefix(ret[0])
+    print(f"address: {address}")
 
     print("thread end")
 

@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 
+import msgpack
 import socket
 import time
-
-from iiss.utils.msgpack_for_ipc import MsgPackForIpc
 
 
 def main():
@@ -15,28 +14,35 @@ def main():
     try:
         sock.connect(server_address)
 
+        unpacker = msgpack.Unpacker(raw=True)
+
         while True:
+            print("Reading...")
             data: bytes = sock.recv(1024)
             print(f"S -> C: {data.hex()}")
             if len(data) == 0:
                 break
 
-            request: list = MsgPackForIpc.loads(data)
-            address_bytes: bytes = request[2]
+            unpacker.feed(data)
 
-            print(request)
-            print(f"{request[2].hex()}")
+            for request in unpacker:
+                payload: list = request[2]
+                address_bytes: bytes = payload[0]
 
-            time.sleep(5)
+                print(f"request: {request}")
+                print(f"{address_bytes.hex()}")
 
-            response = [
-                request[0], request[1], address_bytes, iscore, block_height
-            ]
-            data: bytes = MsgPackForIpc.dumps(response)
-            print(f"C -> S: {data.hex()}")
-            sock.send(data)
+                time.sleep(1)
 
-            block_height += 1
+                payload = [address_bytes, iscore, block_height]
+                response = [request[0], request[1], payload]
+                print(f"response: {response}")
+                data: bytes = msgpack.dumps(response)
+                print(f"C -> S: {data.hex()}")
+                sock.send(data)
+
+                block_height += 1
+                print(f"block_height: {block_height}")
 
     except Exception as e:
         print(e)

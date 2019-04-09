@@ -17,14 +17,14 @@ import asyncio
 import concurrent.futures
 from enum import IntEnum
 from threading import Lock
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
+import msgpack
+
+from .base.address import Address
 from .server import IPCServer
-from .utils.msgpack_for_ipc import MsgPackForIpc
-from .base.address import Address, AddressPrefix
 
 if TYPE_CHECKING:
-    from .address import Address
     from asyncio.streams import StreamReader, StreamWriter
 
 
@@ -49,6 +49,8 @@ class RewardCalcProxy(object):
         self._server_task = None
         self._lock = Lock()
         self._ipc_server = IPCServer()
+        self._calculation_result: Optional[list] = None
+        self._unpacker = None
 
     def open(self, path: str):
         self._loop = asyncio.get_event_loop()
@@ -56,6 +58,7 @@ class RewardCalcProxy(object):
         self._msgs_to_recv = {}
         self._msg_id = 0
 
+        self._unpacker = msgpack.Unpacker(raw=True)
         self._ipc_server.open(self._loop, self._on_accepted, path)
 
     def get_msg_id(self):
@@ -82,7 +85,7 @@ class RewardCalcProxy(object):
             msg_id: int = payload[1]
             self._msgs_to_recv[msg_id] = item
 
-            data: bytes = self._dumps(payload)
+            data: bytes = msgpack.packb(payload)
             print(f"on_send(): data({data.hex()}")
 
             writer.write(data)
@@ -93,23 +96,20 @@ class RewardCalcProxy(object):
             data: bytes = await reader.read(1024)
             print(f"on_recv(): data({data.hex()})")
 
-            payload: list = self._loads(data)
+            self._unpacker.feed(data)
 
-            if isinstance(payload, list):
-                msg_id: int = payload[1]
-                request: list = self._msgs_to_recv[msg_id]
-                future: asyncio.Future = request[1]
-                future.set_result(payload)
+            for response in self._unpacker:
+                if isinstance(response, list):
+                    msg_id: int = response[1]
+                    payload: list = response[2]
 
-                del self._msgs_to_recv[msg_id]
+                    request: list = self._msgs_to_recv[msg_id]
+                    future: asyncio.Future = request[1]
+                    future.set_result(payload)
 
-    @staticmethod
-    def _dumps(payload: list) -> bytes:
-        return MsgPackForIpc.dumps(payload)
-
-    @staticmethod
-    def _loads(data: bytes) -> list:
-        return MsgPackForIpc.loads(data)
+                    del self._msgs_to_recv[msg_id]
+                else:
+                    raise Exception
 
     def start(self):
         self._ipc_server.start()
@@ -124,15 +124,40 @@ class RewardCalcProxy(object):
         self._lock = None
         self._loop = None
 
-    def calculate(self, iiss_db_path: str, block_height: int):
-        """Request RewardCalculator to calculate IScore for every account
-
-        :param iiss_db_path: the absolute path of iiss database
-        :param block_height: The blockHeight when this request are sent to RewardCalculator
-        """
+    def version(self):
         pass
 
-    def claim_threadsafe(self, address: 'Address', block_height: int, block_hash: bytes) -> list:
+    def calculate(self, db_path: str, block_height: int):
+        """Request RewardCalculator to calculate IScore for every account
+
+        :param db_path: the absolute path of iiss database
+        :param block_height: The blockHeight when this request are sent to RewardCalculator
+        """
+        asyncio.run_coroutine_threadsafe(
+            self._calculate(db_path, block_height), self._loop)
+
+    async def _calculate(self, db_path: str, block_height: int):
+        future: asyncio.Future = self._loop.create_future()
+        msg_id: int = self.get_msg_id()
+
+        payload: list = [db_path, block_height]
+        request = [
+            [
+                MessageType.CALCULATE,
+                msg_id,
+                payload
+            ],
+            future
+        ]
+
+        self._queue.put_nowait(request)
+
+        await future
+
+        self._calculation_result: list = future.result()
+
+    def claim_iscore(self, address: 'Address',
+                     block_height: int, block_hash: bytes) -> int:
         """Claim IScore of a given address
 
         :param address: the address to claim
@@ -140,9 +165,39 @@ class RewardCalcProxy(object):
         :param block_hash: the hash of block which contains this claim tx
         :return: [i-score(int), block_height(int)]
         """
-        pass
+        future: concurrent.futures.Future = asyncio.run_coroutine_threadsafe(
+                self._claim_iscore(address, block_height, block_hash), self._loop)
 
-    def query_threadsafe(self, address: 'Address') -> list:
+        result: list = future.result()
+        iscore: int = result[3]
+
+        return iscore
+
+    async def _claim_iscore(self, address: 'Address',
+                            block_height: int, block_hash: bytes) -> int:
+        future: asyncio.Future = self._loop.create_future()
+        msg_id: int = self.get_msg_id()
+
+        payload: list = [
+            address.to_bytes_including_prefix(),
+            block_height,
+            block_hash
+        ]
+        item = [
+            [
+                MessageType.CLAIM,
+                msg_id,
+                payload
+            ],
+            future
+        ]
+
+        self._queue.put_nowait(item)
+
+        await future
+        return future.result()
+
+    def query_iscore(self, address: 'Address') -> list:
         """Returns the I-Score of a given address
 
         It should be called on not main thread but query thread.
@@ -150,31 +205,61 @@ class RewardCalcProxy(object):
         :param address:
         :return: [i-score(int), block_height(int)]
         """
-        future: concurrent.futures.Future = \
-            asyncio.run_coroutine_threadsafe(self._query(address), self._loop)
-        ret = future.result()
-        ret[2] = Address.from_bytes_including_prefix(ret[2])
+        future: concurrent.futures.Future = asyncio.run_coroutine_threadsafe(
+            self._query_iscore(address), self._loop)
 
-        return ret
+        result: list = future.result()
+        return result
 
-    async def _query(self, address: 'Address') -> list:
+    async def _query_iscore(self, address: 'Address') -> list:
         """
 
         :param address:
-        :return:
+        :return: [iscore(int), block_height(int)]
         """
         future: asyncio.Future = self._loop.create_future()
         msg_id = self.get_msg_id()
-        item = [[MessageType.QUERY, msg_id, address.to_bytes_including_prefix()], future]
+
+        payload = [address.to_bytes_including_prefix()]
+        item = [
+            [
+                MessageType.QUERY,
+                msg_id,
+                payload
+            ],
+            future
+        ]
 
         self._queue.put_nowait(item)
 
         await future
-
         return future.result()
 
     def commit_block(self, block_height: int, block_hash: bytes) -> list:
-        pass
+        future: concurrent.futures.Future = asyncio.run_coroutine_threadsafe(
+            self._commit_block(block_height, block_hash), self._loop)
+
+        result: list = future.result()
+        return result
+
+    async def _commit_block(self, block_height: int, block_hash: bytes) -> list:
+        future: asyncio.Future = self._loop.create_future()
+        msg_id = self.get_msg_id()
+
+        payload = [block_height, block_hash]
+        item = [
+            [
+                MessageType.QUERY,
+                msg_id,
+                payload
+            ],
+            future
+        ]
+
+        self._queue.put_nowait(item)
+
+        await future
+        return future.result()
 
     def rollback_block(self, block_height: int, block_hash: bytes) -> list:
         pass
