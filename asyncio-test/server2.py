@@ -46,7 +46,6 @@ def main():
 
     try:
         loop.call_soon(func)
-        loop.call_later(3, run, proxy, 5)
         loop.run_forever()
         proxy.close()
     finally:
