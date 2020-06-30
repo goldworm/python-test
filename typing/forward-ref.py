@@ -1,4 +1,4 @@
-from typing import List, get_type_hints
+from typing import List, get_type_hints, Dict
 import inspect
 
 
@@ -6,12 +6,12 @@ class A:
     pass
 
 
-def func(a: List["4+4"]):
+def func(a: List["open('hello', 'w')"], b: "A", c: Dict[str, "A"]):
     pass
 
 
 def main():
-    # print(get_type_hints(func))
+    print("get_type_hints(): ", get_type_hints(func))
     print(func.__annotations__)
 
 
