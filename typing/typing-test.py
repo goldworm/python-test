@@ -1,6 +1,16 @@
 # -*- coding: utf-8 -*-
 
 from typing import get_origin, get_args, List, Dict, Union, Optional, Tuple
+from typing_extensions import TypedDict
+
+
+class Person(TypedDict):
+    name: str
+    age: int
+
+
+def handle_typed_dict():
+    print(Person.__annotations__)
 
 
 def main():
@@ -27,6 +37,8 @@ def main():
 
 
     print(getattr(types, "haha", None))
+
+    handle_typed_dict()
 
 
 if __name__ == "__main__":
