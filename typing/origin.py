@@ -24,12 +24,16 @@ def get_args(type_hint):
 def main():
     origin = get_origin(Person)
     args = get_args(Person)    
-    print(origin, args)
-    print(Person.__annotations__)
-    print(f"Class: {Person.__class__.__name__}")
-    print(Person.__dict__)
-    print(A.__dict__)
-    print(Dict[str, int].__origin__)
+    # print(origin, args)
+    # print(Person.__annotations__)
+    # print(f"Class: {Person.__class__.__name__}")
+    # print(Person.__dict__)
+    # print(A.__dict__)
+    # print(Dict[str, int].__origin__)
+
+    origin = get_origin(List[int])
+    print(origin)
+    print(origin is List)
 
 
 if __name__ == "__main__":
